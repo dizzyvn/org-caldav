@@ -5,6 +5,8 @@
 
 ;; Author: David Engster <deng@randomsample.de>
 ;; Keywords: calendar, caldav
+;; Package-Version: 20200510.2030
+;; Package-Commit: 8569941a0a5a9393ba51afc8923fd7b77b73fa7a
 ;; Package-Requires: ((org "7"))
 ;;
 ;; This file is not part of GNU Emacs.
@@ -267,6 +269,10 @@ events URL for a calendar."
 
 (defcustom org-caldav-location-newline-replacement ", "
   "String to replace newlines in the LOCATION field with."
+  :type 'string)
+
+(defcustom org-caldav-rrule-newline-replacement ", "
+  "String to replace newlines in the RRULE field with."
   :type 'string)
 
 ;; Internal variables
@@ -1147,6 +1153,10 @@ which can only be synced to calendar. Ignoring." uid))
 		;; and location
 		(org-caldav-change-location (nth 6 eventdata)))
 	      (when (or (eq org-caldav-sync-changes-to-org 'timestamp-only)
+			        (eq org-caldav-sync-changes-to-org 'title-and-timestamp))
+		;; and rrule
+		(org-caldav-change-rrule (nth 8 eventdata)))
+	      (when (or (eq org-caldav-sync-changes-to-org 'timestamp-only)
 			(eq org-caldav-sync-changes-to-org 'title-and-timestamp))
 		;; Sync timestamp
 		(setq timesync
@@ -1222,7 +1232,19 @@ NEWLOCATION contains newlines, replace them with
     (if (> (length newlocation) 0)
 	(org-set-property "LOCATION"
 			  (replace-regexp-in-string "\n" replacement newlocation))
-      (org-delete-property "LOCATION"))))
+    (org-delete-property "LOCATION"))))
+
+(defun org-caldav-change-rrule (newrrule)
+  "Change the RRULE property from ORG item under point to
+NEWRRULE. If NEWRRULE is \"\", removes the rrule property. If
+NEWRRULE contains newlines, replace them with
+`org-caldav-rrule-newline-replacement'."
+  (let ((replacement org-caldav-rrule-newline-replacement))
+    (cl-assert (not (string-match-p "\n" replacement)))
+    (if (> (length newrrule) 0)
+	(org-set-property "RRULE"
+			  (replace-regexp-in-string "\n" replacement newrrule))
+      (org-delete-property "RRULE"))))
 
 (defun org-caldav-change-timestamp (newtime)
   "Change timestamp from Org item under point to NEWTIME.
@@ -1404,7 +1426,7 @@ Do nothing if LEVEL is larger than `org-caldav-debug-level'."
 		      (point-min))))
 
 (defun org-caldav-insert-org-entry (start-d start-t end-d end-t
-                                            summary description location e-type
+                                            summary description location e-type rrule
                                             &optional uid level)
   "Insert org block from given data at current position.
 START/END-D: Start/End date.  START/END-T: Start/End time.
@@ -1424,6 +1446,7 @@ Returns MD5 from entry."
   (forward-line -1)
   (when uid
     (org-set-property "ID" (url-unhex-string uid)))
+  (org-caldav-change-rrule rrule)
   (org-caldav-change-location location)
   (org-back-to-heading)
   (org-set-tags-to org-caldav-select-tags)
@@ -1611,10 +1634,10 @@ If COMPLEMENT is non-nil, return all item without errors."
     heading))
 
 ;; The following is taken from icalendar.el, written by Ulf Jasper.
-;; The LOCATION property is added the extracted list
+;; The LOCATION and RRULE property is added the extracted list
 (defun org-caldav-convert-event ()
   "Convert icalendar event in current buffer.
-Returns a list '(start-d start-t end-d end-t summary description location)'
+Returns a list '(start-d start-t end-d end-t summary description location e-type rrule)'
 which can be fed into `org-caldav-insert-org-entry'."
   (let ((decoded (decode-coding-region (point-min) (point-max) 'utf-8 t)))
     (erase-buffer)
@@ -1703,7 +1726,7 @@ which can be fed into `org-caldav-insert-org-entry'."
     ;; Return result
     (list start-d start-t
 	  (if end-t end-d end-1-d)
-	  end-t summary description location e-type)))
+	  end-t summary description location e-type rrule)))
 
 ;; This is adapted from url-dav.el, written by Bill Perry.
 ;; This does more error checking on the headers and retries
